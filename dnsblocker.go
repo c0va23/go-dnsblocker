@@ -1,14 +1,36 @@
 package main
 
 import (
+	"bufio"
+	"io"
 	"log"
+	"os"
 
 	"github.com/miekg/dns"
 )
 
 var proxyPassAddr = "8.8.8.8:domain"
 
-var blocked = []string {
+var blocked = []string{}
+
+func init() {
+	file, openErr := os.Open("hosts")
+	if nil != openErr {
+		panic(openErr)
+	}
+	defer file.Close()
+	buffer := bufio.NewReader(file)
+	for {
+		line, readErr := buffer.ReadString('\n')
+		if readErr == io.EOF {
+			break
+		} else if nil != readErr {
+			panic(readErr)
+		}
+
+		host := line[0 : len(line)-1]
+		blocked = append(blocked, host)
+	}
 }
 
 func isBlocked(requestMesage *dns.Msg) bool {
