@@ -5,16 +5,21 @@ import (
 	"flag"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/miekg/dns"
 	"github.com/op/go-logging"
 )
 
-var logger = formatedLogger()
+var logger = logging.MustGetLogger("dnsblocker")
+var logFormatter = logging.MustStringFormatter(
+	"%{color}%{time:15:04:05.000} [%{level:.5s}] %{message}%{color:reset}",
+)
 
 var dnsServer string
 var listen string
 var hostsPath string
+var logLevelStr string
 var blocked = []string{}
 
 func init() {
@@ -22,7 +27,10 @@ func init() {
 		"DNS server for proxy not blocked queries")
 	flag.StringVar(&listen, "listen", ":domain", "Listen is pair 'ip:port'")
 	flag.StringVar(&hostsPath, "hosts-path", "hosts", "Path to hosts file")
+	flag.StringVar(&logLevelStr, "log-level", "INFO", "Set minimum log level")
 	flag.Parse()
+
+	configureLogger()
 
 	logger.Infof("Start with: listen: %s; dns-server: %s; hosts-path: %s",
 		listen, dnsServer, hostsPath)
@@ -30,19 +38,14 @@ func init() {
 	loadBlocked()
 }
 
-func formatedLogger() *logging.Logger {
-	logger := logging.MustGetLogger("dnsblocker")
-	logger.SetBackend(
-		logging.MultiLogger(
-			logging.NewBackendFormatter(
-				logging.NewLogBackend(os.Stdout, "", 0),
-				logging.MustStringFormatter(
-					"%{color}%{time:15:04:05.000} [%{level:.5s}] %{message}%{color:reset}",
-				),
-			),
-		),
-	)
-	return logger
+func configureLogger() {
+	logging.SetFormatter(logFormatter)
+	normalizedLogLevel := strings.ToUpper(logLevelStr)
+	if logLevel, levelErr := logging.LogLevel(normalizedLogLevel); nil == levelErr {
+		logging.SetLevel(logLevel, "")
+	} else {
+		logger.Fatal(levelErr)
+	}
 }
 
 func loadBlocked() {
