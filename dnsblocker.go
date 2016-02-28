@@ -60,21 +60,15 @@ func loadBlocked() {
 			panic(readErr)
 		}
 
-		host := line[0 : len(line)-1]
+		host := dns.Fqdn(line[0 : len(line)-1])
 		blocked = append(blocked, host)
 	}
 	logger.Infof("Loaded %d domains", len(blocked))
 }
 
-func isBlocked(requestMesage *dns.Msg) bool {
-	if 1 != len(requestMesage.Question) {
-		logger.Warning("Can not process message with multiple questions")
-		return false
-	}
-
-	question := requestMesage.Question[0]
+func isBlocked(requestedName string) bool {
 	for _, name := range blocked {
-		if dns.Fqdn(name) == question.Name {
+		if name == requestedName {
 			return true
 		}
 	}
@@ -98,9 +92,9 @@ func proxyRequest(writer dns.ResponseWriter, requestMessage *dns.Msg) {
 	}
 }
 
-func blockedRequest(writer dns.ResponseWriter, requestMessage *dns.Msg) {
+func errorResponse(writer dns.ResponseWriter, requestMessage *dns.Msg, responseCode int) {
 	responseMessage := new(dns.Msg)
-	responseMessage.SetRcode(requestMessage, dns.RcodeRefused)
+	responseMessage.SetRcode(requestMessage, responseCode)
 	logger.Debugf("Block response: %+v", responseMessage)
 	writeResponse(writer, responseMessage)
 }
@@ -108,9 +102,20 @@ func blockedRequest(writer dns.ResponseWriter, requestMessage *dns.Msg) {
 func handler(writer dns.ResponseWriter, requestMessage *dns.Msg) {
 	logger.Debugf("Query message: %+v", requestMessage)
 
-	if isBlocked(requestMessage) {
-		blockedRequest(writer, requestMessage)
+	if 1 != len(requestMessage.Question) {
+		logger.Warning("Can not process message with multiple questions")
+		errorResponse(writer, requestMessage, dns.RcodeFormatError)
+		return
+	}
+
+	question := requestMessage.Question[0]
+	logger.Infof("Request name: %s", question.Name)
+
+	if isBlocked(question.Name) {
+		logger.Infof("Block name: %s", question.Name)
+		errorResponse(writer, requestMessage, dns.RcodeRefused)
 	} else {
+		logger.Infof("Request name %s is proxed", question.Name)
 		proxyRequest(writer, requestMessage)
 	}
 }
