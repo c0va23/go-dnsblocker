@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"flag"
 	"io"
-	"log"
 	"os"
 
 	"github.com/miekg/dns"
+	"github.com/op/go-logging"
 )
+
+var logger = formatedLogger()
 
 var dnsServer string
 var listen string
@@ -22,10 +24,25 @@ func init() {
 	flag.StringVar(&hostsPath, "hosts-path", "hosts", "Path to hosts file")
 	flag.Parse()
 
-	log.Printf("Start with: listen: %s; dns-server: %s; hosts-path: %s\n",
+	logger.Infof("Start with: listen: %s; dns-server: %s; hosts-path: %s",
 		listen, dnsServer, hostsPath)
 
 	loadBlocked()
+}
+
+func formatedLogger() *logging.Logger {
+	logger := logging.MustGetLogger("dnsblocker")
+	logger.SetBackend(
+		logging.MultiLogger(
+			logging.NewBackendFormatter(
+				logging.NewLogBackend(os.Stdout, "", 0),
+				logging.MustStringFormatter(
+					"%{color}%{time:15:04:05.000} [%{level:.5s}] %{message}%{color:reset}",
+				),
+			),
+		),
+	)
+	return logger
 }
 
 func loadBlocked() {
@@ -46,12 +63,12 @@ func loadBlocked() {
 		host := line[0 : len(line)-1]
 		blocked = append(blocked, host)
 	}
-	log.Printf("Loaded %d domains", len(blocked))
+	logger.Infof("Loaded %d domains", len(blocked))
 }
 
 func isBlocked(requestMesage *dns.Msg) bool {
 	if 1 != len(requestMesage.Question) {
-		log.Printf("Can not process message with multiple questions")
+		logger.Warning("Can not process message with multiple questions")
 		return false
 	}
 
@@ -68,14 +85,14 @@ func proxyRequest(writer dns.ResponseWriter, requestMessage *dns.Msg) {
 	responseMessage, exchangeErr := dns.Exchange(requestMessage, dnsServer)
 
 	if nil == exchangeErr {
-		log.Printf("Response message: %+v\n", responseMessage)
+		logger.Debug("Response message: %+v", responseMessage)
 		writeResponse(writer, responseMessage)
 	} else {
-		log.Printf("Exchange error: %s\n", exchangeErr)
+		logger.Errorf("Exchange error: %s", exchangeErr)
 
 		errorMessage := new(dns.Msg)
 		errorMessage.SetRcode(requestMessage, dns.RcodeServerFailure)
-		log.Printf("Error message: %+v", errorMessage)
+		logger.Errorf("Error message: %+v", errorMessage)
 
 		writeResponse(writer, errorMessage)
 	}
@@ -84,12 +101,12 @@ func proxyRequest(writer dns.ResponseWriter, requestMessage *dns.Msg) {
 func blockedRequest(writer dns.ResponseWriter, requestMessage *dns.Msg) {
 	responseMessage := new(dns.Msg)
 	responseMessage.SetRcode(requestMessage, dns.RcodeRefused)
-	log.Printf("Block response: %+v\n", responseMessage)
+	logger.Debugf("Block response: %+v", responseMessage)
 	writeResponse(writer, responseMessage)
 }
 
 func handler(writer dns.ResponseWriter, requestMessage *dns.Msg) {
-	log.Printf("Query message: %+v\n", requestMessage)
+	logger.Debugf("Query message: %+v", requestMessage)
 
 	if isBlocked(requestMessage) {
 		blockedRequest(writer, requestMessage)
@@ -100,9 +117,9 @@ func handler(writer dns.ResponseWriter, requestMessage *dns.Msg) {
 
 func writeResponse(writer dns.ResponseWriter, message *dns.Msg) {
 	if writeErr := writer.WriteMsg(message); nil == writeErr {
-		log.Printf("Writer success\n")
+		logger.Debug("Writer success")
 	} else {
-		log.Printf("Writer error: %s\n", writeErr)
+		logger.Errorf("Writer error: %s", writeErr)
 	}
 }
 
@@ -114,6 +131,6 @@ func main() {
 	}
 
 	if serverErr := server.ListenAndServe(); nil != serverErr {
-		log.Fatal(serverErr)
+		logger.Fatal(serverErr)
 	}
 }
