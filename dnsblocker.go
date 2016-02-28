@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"io"
 	"log"
 	"os"
@@ -9,12 +10,26 @@ import (
 	"github.com/miekg/dns"
 )
 
-var proxyPassAddr = "8.8.8.8:domain"
-
+var dnsServer string
+var listen string
+var hostsPath string
 var blocked = []string{}
 
 func init() {
-	file, openErr := os.Open("hosts")
+	flag.StringVar(&dnsServer, "dns-server", "192.168.1.1:domain",
+		"DNS server for proxy not blocked queries")
+	flag.StringVar(&listen, "listen", ":domain", "Listen is pair 'ip:port'")
+	flag.StringVar(&hostsPath, "hosts-path", "hosts", "Path to hosts file")
+	flag.Parse()
+
+	log.Printf("Start with: listen: %s; dns-server: %s; hosts-path: %s\n",
+		listen, dnsServer, hostsPath)
+
+	loadBlocked()
+}
+
+func loadBlocked() {
+	file, openErr := os.Open(hostsPath)
 	if nil != openErr {
 		panic(openErr)
 	}
@@ -49,7 +64,7 @@ func isBlocked(requestMesage *dns.Msg) bool {
 }
 
 func proxyRequest(writer dns.ResponseWriter, requestMessage *dns.Msg) {
-	responseMessage, exchangeErr := dns.Exchange(requestMessage, proxyPassAddr)
+	responseMessage, exchangeErr := dns.Exchange(requestMessage, dnsServer)
 
 	if nil == exchangeErr {
 		log.Printf("Response message: %+v\n", responseMessage)
@@ -92,7 +107,7 @@ func writeResponse(writer dns.ResponseWriter, message *dns.Msg) {
 
 func main() {
 	server := &dns.Server{
-		Addr:    ":1053",
+		Addr:    listen,
 		Net:     "udp",
 		Handler: dns.HandlerFunc(handler),
 	}
