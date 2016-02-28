@@ -71,7 +71,7 @@ func loadBlocked() {
 
 func isBlocked(requestedName string) bool {
 	for _, name := range blocked {
-		if name == requestedName {
+		if dns.IsSubDomain(name, requestedName) {
 			return true
 		}
 	}
