@@ -46,6 +46,7 @@ func loadBlocked() {
 		host := line[0 : len(line)-1]
 		blocked = append(blocked, host)
 	}
+	log.Printf("Loaded %d domains", len(blocked))
 }
 
 func isBlocked(requestMesage *dns.Msg) bool {
