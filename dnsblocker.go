@@ -13,7 +13,7 @@ import (
 
 var logger = logging.MustGetLogger("dnsblocker")
 var logFormatter = logging.MustStringFormatter(
-	"%{color}%{time:15:04:05.000} [%{level:.5s}] %{message}%{color:reset}",
+	"%{color}%{time} [%{level:.5s}] %{message}%{color:reset}",
 )
 
 var dnsServer string
@@ -39,7 +39,14 @@ func init() {
 }
 
 func configureLogger() {
-	logging.SetFormatter(logFormatter)
+	logging.SetBackend(
+		logging.MultiLogger(
+			logging.NewBackendFormatter(
+				logging.NewLogBackend(os.Stdout, "", 0),
+				logFormatter,
+			),
+		),
+	)
 	normalizedLogLevel := strings.ToUpper(logLevelStr)
 	if logLevel, levelErr := logging.LogLevel(normalizedLogLevel); nil == levelErr {
 		logging.SetLevel(logLevel, "")
@@ -104,6 +111,7 @@ func errorResponse(writer dns.ResponseWriter, requestMessage *dns.Msg, responseC
 
 func handler(writer dns.ResponseWriter, requestMessage *dns.Msg) {
 	logger.Debugf("Query message: %+v", requestMessage)
+	logger.Infof("Accept request from %v", writer.RemoteAddr())
 
 	if 1 != len(requestMessage.Question) {
 		logger.Warning("Can not process message with multiple questions")
