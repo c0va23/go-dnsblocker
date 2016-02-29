@@ -11,6 +11,25 @@ facebook.com
 
 ```
 
+## Build
+
+Build require installed and configured golang compiler (tested on 1.5.3).
+
+```bash
+git clone https://github.com/c0va23/go-dnsblocker.git
+go build dnsblocker.go
+echo google.com > hosts
+sudo ./dnsblocker
+```
+
+## Test dns request
+
+For test you should send dns query to dnsblocker. For example use util **dig**:
+
+```bash
+dig @127.0.0.1 google.com
+```
+
 ## Command line arguments
 
 ```
