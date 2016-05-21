@@ -39,8 +39,12 @@ func init() {
 	configureLogger()
 	configureCache()
 
-	logger.Infof("Start with: listen: %s; dns-server: %s; hosts-path: %s",
-		listen, dnsServer, hostsPath)
+	logger.Infof("Start listen on: %s", listen)
+	logger.Infof("DNS source: %s", dnsServer)
+	logger.Infof("Hosts file: %s", hostsPath)
+	logger.Infof("Log level: %s", logLevelStr)
+	logger.Infof("Cache size: %d", cacheSize)
+	logger.Infof("Cache duration: %d", cacheDuration)
 
 	loadBlocked()
 }
@@ -96,51 +100,77 @@ func isBlocked(requestedName string) bool {
 	return false
 }
 
-func messageCacheKey(message *dns.Msg) []byte {
+func messageCacheKey(message *dns.Msg) string {
 	questions := make([]string, 0, len(message.Question))
 	for _, question := range message.Question {
 		questions = append(questions, question.String())
 	}
-	return ([]byte)(strings.Join(questions, "\n"))
+	return strings.Join(questions, ",")
+}
+
+func fetchCache(cacheKey string) (*dns.Msg, error) {
+	messageData, cacheErr := cache.Get([]byte(cacheKey))
+	if freecache.ErrNotFound == cacheErr {
+		logger.Infof("Message for key %s not found in cache", cacheKey)
+		return nil, cacheErr
+	}
+	if nil != cacheErr {
+		logger.Errorf("Cache error for key %s: %s", cacheKey, cacheErr)
+		return nil, cacheErr
+	}
+
+	logger.Infof("Message for key %sfound in cache", cacheKey)
+
+	dnsMessage := new(dns.Msg)
+	if unpackErr := dnsMessage.Unpack(messageData); nil != unpackErr {
+		logger.Errorf("Error unpack mesasge with key %s : %s", cacheKey, unpackErr)
+		return nil, unpackErr
+	}
+
+	logger.Debug("Success unpack message")
+	return dnsMessage, nil
+}
+
+func writeCache(cacheKey string, dnsMessage *dns.Msg) error {
+	messageData, packErr := dnsMessage.Pack()
+	if nil != packErr {
+		logger.Errorf("Error pack message with key %s: %s", cacheKey, packErr)
+		return packErr
+	}
+
+	logger.Debugf("Pack message with key %s is success", cacheKey)
+
+	if cacheErr := cache.Set([]byte(cacheKey), messageData, cacheDuration); nil != cacheErr {
+		logger.Errorf("Error write cache for key %s: %s", cacheKey, cacheErr)
+		return cacheErr
+	}
+	logger.Debugf("Write cache for key %s is success", cacheKey)
+	return nil
 }
 
 func dnsExchangeWithCache(requestMessage *dns.Msg) (*dns.Msg, error) {
 	cacheKey := messageCacheKey(requestMessage)
 
-	if cachedResponseData, cacheGetErr := cache.Get(cacheKey); nil == cacheGetErr {
-		logger.Info("Message found in cache")
-		cachedResponseMessage := new(dns.Msg)
-		if unpackErr := cachedResponseMessage.Unpack(cachedResponseData); nil != unpackErr {
-			logger.Errorf("Unpack error: %s", unpackErr)
-			return nil, unpackErr
-		}
-		logger.Debug("Success unpack message")
+	if cachedResponseMessage, fetchErr := fetchCache(cacheKey); nil == fetchErr {
 		cachedResponseMessage.SetReply(requestMessage)
 		return cachedResponseMessage, nil
-	} else if freecache.ErrNotFound == cacheGetErr {
-		logger.Infof("Message not found in cache: %s", cacheGetErr)
-		responseMessage, exchangeErr := dns.Exchange(requestMessage, dnsServer)
-		if nil != exchangeErr {
-			logger.Errorf("Exchange error: %s", exchangeErr)
-			return nil, exchangeErr
-		}
-		logger.Debug("Exchange success")
-		responseData, packErr := responseMessage.Pack()
-		if nil != packErr {
-			logger.Errorf("Error pack message: %s", packErr)
-			return nil, packErr
-		}
-		logger.Debug("Pack success")
-		if cacheSetErr := cache.Set(cacheKey, responseData, cacheDuration); nil != cacheSetErr {
-			logger.Error("Error set cache")
-			return nil, cacheSetErr
-		}
-		logger.Debug("Write cache success")
-		return responseMessage, nil
-	} else {
-		logger.Errorf("Cache error: %s", cacheGetErr)
-		return nil, cacheGetErr
+	} else if freecache.ErrNotFound != fetchErr {
+		return nil, fetchErr
 	}
+
+	responseMessage, exchangeErr := dns.Exchange(requestMessage, dnsServer)
+	if nil != exchangeErr {
+		logger.Errorf("Exchange error for key %s: %s", cacheKey, exchangeErr)
+		return nil, exchangeErr
+	}
+
+	logger.Debugf("Exchange for key %s is success", cacheKey)
+
+	if writeErr := writeCache(cacheKey, responseMessage); nil != writeErr {
+		return nil, writeErr
+	}
+
+	return responseMessage, nil
 }
 
 func proxyRequest(writer dns.ResponseWriter, requestMessage *dns.Msg) {
