@@ -1,0 +1,11 @@
+[Unit]
+Description=DNS proxy with black list
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/dnsblocker
+ExecStart=/opt/dnsblocker/dnsblocker
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
