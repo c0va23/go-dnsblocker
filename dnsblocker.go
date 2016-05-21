@@ -123,11 +123,11 @@ func fetchCache(cacheKey string) (*dns.Msg, error) {
 		return nil, cacheErr
 	}
 
-	logger.Infof("Message for key %sfound in cache", cacheKey)
+	logger.Infof("Message for key %s found in cache", cacheKey)
 
 	dnsMessage := new(dns.Msg)
 	if unpackErr := dnsMessage.Unpack(messageData); nil != unpackErr {
-		logger.Errorf("Error unpack mesasge with key %s : %s", cacheKey, unpackErr)
+		logger.Errorf("Error unpack mesasge with key %s: %s", cacheKey, unpackErr)
 		return nil, unpackErr
 	}
 
