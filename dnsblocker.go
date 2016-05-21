@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -103,7 +104,10 @@ func isBlocked(requestedName string) bool {
 func messageCacheKey(message *dns.Msg) string {
 	questions := make([]string, 0, len(message.Question))
 	for _, question := range message.Question {
-		questions = append(questions, question.String())
+		questionRow := fmt.Sprintf("%s %s %s", question.Name,
+			dns.ClassToString[question.Qclass], dns.TypeToString[question.Qtype])
+
+		questions = append(questions, questionRow)
 	}
 	return strings.Join(questions, ",")
 }
