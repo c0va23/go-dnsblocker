@@ -34,15 +34,15 @@ dig @127.0.0.1 google.com
 
 ```
 -cache-duration int
-  	Set cache duration into seconds (default 300)
+    Set cache duration into seconds (default 300)
 -cache-size int
-  	Set cache size into bytes (default 1048576)
+    Set cache size into bytes (default 1048576)
 -dns-server string
-  	DNS server for proxy not blocked queries (default "192.168.1.1:domain")
+    DNS server for proxy not blocked queries (default "192.168.1.1:domain")
 -hosts-path string
-  	Path to hosts file (default "hosts")
+    Path to hosts file (default "hosts")
 -listen string
-  	Listen is pair 'ip:port' (default ":domain")
+    Listen is pair 'ip:port' (default ":domain")
 -log-level string
-  	Set minimum log level (default "INFO")
+    Set minimum log level (default "INFO")
 ```
