@@ -33,6 +33,10 @@ dig @127.0.0.1 google.com
 ## Command line arguments
 
 ```
+-cache-duration int
+  	Set cache duration into seconds (default 300)
+-cache-size int
+  	Set cache size into bytes (default 1048576)
 -dns-server string
   	DNS server for proxy not blocked queries (default "192.168.1.1:domain")
 -hosts-path string
@@ -42,5 +46,3 @@ dig @127.0.0.1 google.com
 -log-level string
   	Set minimum log level (default "INFO")
 ```
-
-
