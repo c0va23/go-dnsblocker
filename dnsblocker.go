@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/coocood/freecache"
 	"github.com/miekg/dns"
 	"github.com/op/go-logging"
 )
@@ -21,6 +22,9 @@ var listen string
 var hostsPath string
 var logLevelStr string
 var blocked = []string{}
+var cacheSize int
+var cacheDuration int
+var cache *freecache.Cache
 
 func init() {
 	flag.StringVar(&dnsServer, "dns-server", "192.168.1.1:domain",
@@ -28,9 +32,12 @@ func init() {
 	flag.StringVar(&listen, "listen", ":domain", "Listen is pair 'ip:port'")
 	flag.StringVar(&hostsPath, "hosts-path", "hosts", "Path to hosts file")
 	flag.StringVar(&logLevelStr, "log-level", "INFO", "Set minimum log level")
+	flag.IntVar(&cacheSize, "cache-size", 1024*1024, "Set cache size into bytes")
+	flag.IntVar(&cacheDuration, "cache-duration", 5*60, "Set cache duration into seconds")
 	flag.Parse()
 
 	configureLogger()
+	configureCache()
 
 	logger.Infof("Start with: listen: %s; dns-server: %s; hosts-path: %s",
 		listen, dnsServer, hostsPath)
@@ -76,6 +83,10 @@ func loadBlocked() {
 	logger.Infof("Loaded %d domains", len(blocked))
 }
 
+func configureCache() {
+	cache = freecache.NewCache(cacheSize)
+}
+
 func isBlocked(requestedName string) bool {
 	for _, name := range blocked {
 		if dns.IsSubDomain(name, requestedName) {
@@ -85,14 +96,61 @@ func isBlocked(requestedName string) bool {
 	return false
 }
 
-func proxyRequest(writer dns.ResponseWriter, requestMessage *dns.Msg) {
-	responseMessage, exchangeErr := dns.Exchange(requestMessage, dnsServer)
+func messageCacheKey(message *dns.Msg) []byte {
+	questions := make([]string, 0, len(message.Question))
+	for _, question := range message.Question {
+		questions = append(questions, question.String())
+	}
+	return ([]byte)(strings.Join(questions, "\n"))
+}
 
-	if nil == exchangeErr {
+func dnsExchangeWithCache(requestMessage *dns.Msg) (*dns.Msg, error) {
+	cacheKey := messageCacheKey(requestMessage)
+
+	if cachedResponseData, cacheGetErr := cache.Get(cacheKey); nil == cacheGetErr {
+		logger.Info("Message found in cache")
+		cachedResponseMessage := new(dns.Msg)
+		if unpackErr := cachedResponseMessage.Unpack(cachedResponseData); nil != unpackErr {
+			logger.Errorf("Unpack error: %s", unpackErr)
+			return nil, unpackErr
+		}
+		logger.Debug("Success unpack message")
+		cachedResponseMessage.SetReply(requestMessage)
+		return cachedResponseMessage, nil
+	} else if freecache.ErrNotFound == cacheGetErr {
+		logger.Infof("Message not found in cache: %s", cacheGetErr)
+		responseMessage, exchangeErr := dns.Exchange(requestMessage, dnsServer)
+		if nil != exchangeErr {
+			logger.Errorf("Exchange error: %s", exchangeErr)
+			return nil, exchangeErr
+		}
+		logger.Debug("Exchange success")
+		responseData, packErr := responseMessage.Pack()
+		if nil != packErr {
+			logger.Errorf("Error pack message: %s", packErr)
+			return nil, packErr
+		}
+		logger.Debug("Pack success")
+		if cacheSetErr := cache.Set(cacheKey, responseData, cacheDuration); nil != cacheSetErr {
+			logger.Error("Error set cache")
+			return nil, cacheSetErr
+		}
+		logger.Debug("Write cache success")
+		return responseMessage, nil
+	} else {
+		logger.Errorf("Cache error: %s", cacheGetErr)
+		return nil, cacheGetErr
+	}
+}
+
+func proxyRequest(writer dns.ResponseWriter, requestMessage *dns.Msg) {
+	responseMessage, fetchErr := dnsExchangeWithCache(requestMessage)
+
+	if nil == fetchErr {
 		logger.Debug("Response message: %+v", responseMessage)
 		writeResponse(writer, responseMessage)
 	} else {
-		logger.Errorf("Exchange error: %s", exchangeErr)
+		logger.Errorf("Fetch error: %s", fetchErr)
 
 		errorMessage := new(dns.Msg)
 		errorMessage.SetRcode(requestMessage, dns.RcodeServerFailure)
